@@ -1,0 +1,86 @@
+# SYM-1 6502 Assembly Framework
+
+A complete development framework for writing 6502 assembly programs targeting the
+SYM-1 Single Board Computer with Supermonitor V1.1, including a full-screen TUI
+library inspired by ncurses.
+
+## Directory Structure
+
+```
+sym1-framework/
+├── README.md               # This file
+├── Makefile                # Top-level build system
+├── tools/
+│   └── sym1upload.py       # Serial upload tool (S-record / hex loader)
+├── include/
+│   ├── sym1.inc            # SYM-1 hardware & Supermonitor equates
+│   ├── via.inc             # 6522 VIA register definitions
+│   ├── macros.inc          # Convenience assembler macros
+│   └── tui.inc             # TUI library public API equates
+├── lib/
+│   ├── tui.asm             # Full-screen TUI library (ncurses-style)
+│   ├── string.asm          # String utilities
+│   └── math.asm            # 8/16-bit math helpers
+├── examples/
+│   ├── hello/
+│   │   ├── hello.asm       # Hello World
+│   │   └── Makefile
+│   ├── tui_demo/
+│   │   ├── tui_demo.asm    # Full TUI demonstration
+│   │   └── Makefile
+│   └── sysinfo/
+│       ├── sysinfo.asm     # System information display
+│       └── Makefile
+└── docs/
+    ├── sym1_memory_map.md  # Memory map reference
+    ├── supermonitor.md     # Supermonitor V1.1 entry points
+    ├── tui_api.md          # TUI library API reference
+    └── serial_protocol.md  # Upload protocol notes
+```
+
+## Quick Start
+
+### Prerequisites
+- **ca65** (from cc65 toolchain) — assembler
+- **ld65** (from cc65 toolchain) — linker
+- **Python 3** with `pyserial` — for the upload tool
+- A TTL serial adapter connected to the SYM-1 UART
+
+### Install cc65
+```bash
+# Debian/Ubuntu
+sudo apt install cc65
+
+# macOS
+brew install cc65
+
+# Build from source: https://github.com/cc65/cc65
+```
+
+### Build and Upload an Example
+```bash
+cd examples/hello
+make                        # assembles → hello.hex
+make upload PORT=/dev/ttyUSB0   # uploads via Supermonitor loader
+```
+
+### Memory Layout (default)
+| Region       | Address       | Size  | Notes                        |
+|--------------|---------------|-------|------------------------------|
+| Zero Page    | $0000–$00FF   | 256 B | Framework uses $E0–$FF       |
+| Stack        | $0100–$01FF   | 256 B | Hardware stack               |
+| TUI Framebuf | $0200–$04FF   | 768 B | 80×24 / 2 screen halves      |
+| User Program | $0500–$0BFF   | 1.75K | Your code goes here          |
+| TUI Library  | $0C00–$0EFF   | 768 B | Resident TUI routines        |
+| Supermonitor | $8000–$9FFF   | 8K    | ROM (not RAM)                |
+| I/O          | $A000–$BFFF   |       | VIA, UART, etc.              |
+
+> The SYM-1 has 4K RAM ($0000–$0FFF). The layout above fits comfortably.
+
+## Supermonitor Entry Points Used
+
+See `include/sym1.inc` and `docs/supermonitor.md` for the full list.
+Key routines called by the framework:
+- `MONOUT` ($8004) — output one character to console
+- `MONIN`  ($8000) — input one character from console  
+- `MONITR` ($8008) — re-enter monitor (use as "exit")
