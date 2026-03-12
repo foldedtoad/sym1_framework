@@ -58,9 +58,9 @@ ACIA_OVRN   = %00000100 ; Overrun error
 ACIA_FE     = %00000010 ; Framing error
 ACIA_PE     = %00000001 ; Parity error
 
-; ACIA Control — 9600 baud, 8N1, external clock:
-;   $1E = baud 9600 (with 1.8432 MHz crystal), 8 data bits, 1 stop bit
-ACIA_9600_8N1 = $1E
+; ACIA Control — 4800 baud, 8N1, external clock:
+;   $16 = baud 4800 (with 1.8432 MHz crystal), 8 data bits, 1 stop bit
+ACIA_4800_8N1 = $16
 
 ; -----------------------------------------------------------------------------
 ; 6522 VIA  (Versatile Interface Adapter — on-board)

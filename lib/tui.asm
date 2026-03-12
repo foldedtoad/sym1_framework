@@ -19,6 +19,8 @@
         .export tui_fill_rect, tui_title_bar, tui_status_bar
         .export tui_getch, tui_getline
 
+OUTCHR   := $8A47     ; Output character
+
 ; =============================================================================
 ; Internal helpers — emit raw byte to ACIA / Supermonitor
 ; =============================================================================
@@ -26,7 +28,7 @@
 ; _putc: output A to serial console (via Supermonitor MONOUT)
 ; Clobbers nothing (MONOUT may use A internally on SYM-1 V1.1)
 _putc:
-        jsr  MONOUT
+        jsr  OUTCHR ; was MONOUT  // robin
         rts
 
 ; _puts_inline: output a NUL-terminated string that immediately follows

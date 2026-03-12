@@ -69,7 +69,6 @@
 ; String data
 ; -----------------------------------------------------------------------------
         .segment "RODATA"
-
 msg_title:
         .byte " SYM-1 Framework — Hello World ", 0
 

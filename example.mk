@@ -33,7 +33,7 @@ BAUD    ?= 4800
 
 .PHONY: all clean upload libs
 
-all: libs $(TARGET).hex
+all: libs $(TARGET).hex flatten
 
 libs:
 	$(MAKE) -C $(ROOT) libs
@@ -56,7 +56,7 @@ $(TARGET).hex: $(TARGET).bin
 	@echo "Built: $@ (`wc -c < $<` bytes)"
 
 clean:
-	rm -rf $(OBJDIR) $(TARGET).bin $(TARGET).hex $(TARGET).map
+	rm -rf $(OBJDIR) $(TARGET).bin $(TARGET).hex $(TARGET).map $(TARGET).out
 
 upload: $(TARGET).hex
 	python3 $(ROOT)/tools/sym1upload.py --port $(PORT) --baud $(BAUD) $<
