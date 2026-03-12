@@ -1,6 +1,0 @@
-Below is the initial Claude prompt used to generate the initial framework.
-
---------------------------------
-I would like to develop a framework for creating 6502 assembly programs targeting the SYM-1 SBC platform.  The SYM-1 board has 4K of RAM and Supermonitor V1.1 .  I would be interacting with the board via TTL serial console.  If possible, I would like to a full screen (80x24 characters) user interface similar to ncurses.
---------------------------------
-
