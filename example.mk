@@ -60,3 +60,6 @@ clean:
 
 upload: $(TARGET).hex
 	python3 $(ROOT)/tools/sym1upload.py --port $(PORT) --baud $(BAUD) $<
+
+flatten:
+	hexdump -v -e '1/1 "%02x\n"' $(TARGET).bin > $(basename $(TARGET)).out

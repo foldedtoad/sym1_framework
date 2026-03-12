@@ -215,7 +215,7 @@ def main():
     )
     parser.add_argument('input', help='Input file (.hex/.s19/.bin)')
     parser.add_argument('--port',    default='/dev/ttyUSB0', help='Serial port')
-    parser.add_argument('--baud',    type=int, default=9600,  help='Baud rate')
+    parser.add_argument('--baud',    type=int, default=4800,  help='Baud rate')
     parser.add_argument('--exec',    action='store_true',     help='Execute after load')
     parser.add_argument('--addr',    default='0500',          help='Execution address (hex)')
     parser.add_argument('--load',    default='0500',          help='Binary load address (hex)')
