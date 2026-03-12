@@ -13,6 +13,7 @@
 ;   out: A = STR_LEN = length (max 255)
 ;   Preserves X, Y
 ; =============================================================================
+.IF 0      ; // WHY are two versions needed?  // robin
 str_len:
         pha
         ldy  #0
@@ -28,6 +29,7 @@ str_len:
         tya
         sta  STR_LEN
         rts
+.ELSE
 
 ; str_len (corrected):
 str_len:
@@ -39,6 +41,7 @@ str_len:
 @done:  tya
         sta  STR_LEN
         rts
+.ENDIF        
 
 ; =============================================================================
 ; str_copy — copy NUL-terminated string

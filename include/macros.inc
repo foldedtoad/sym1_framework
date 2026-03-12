@@ -92,14 +92,14 @@
 ; -----------------------------------------------------------------------------
 ; BOX  x, y, w, h  — draw a single-line box at immediate coords
 ; -----------------------------------------------------------------------------
-.macro  BOX  x, y, w, h
-        lda  #x
+.macro  BOX  x_axis, y_axis, width, height
+        lda  #x_axis
         sta  SCRATCH0
-        lda  #y
+        lda  #y_axis
         sta  SCRATCH1
-        lda  #w
+        lda  #width
         sta  SCRATCH2
-        lda  #h
+        lda  #height
         sta  SCRATCH3
         jsr  tui_box
 .endmacro

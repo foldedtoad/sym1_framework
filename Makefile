@@ -8,11 +8,18 @@
 #   make               Same as make libs
 #   make clean         Remove all build artifacts
 #   make PORT=/dev/ttyUSB0 upload TARGET=examples/hello/hello.hex
+#
+# Remember to set CC65_HOME in your .bashrc file.
+#   example:  export CC65_HOME="~/sym1/cc65"
 # =============================================================================
 
-AS      = ca65
-LD      = ld65
-ASFLAGS = -I include -t none
+AS = $(CC65_HOME)/bin/ca65
+CC = $(CC65_HOME)/bin/cc65
+CL = $(CC65_HOME)/bin/cl65
+LD = $(CC65_HOME)/bin/ld65
+DA = $(CC65_HOME)/bin/da65
+
+ASFLAGS = -t none -I include 
 LDFLAGS = -C sym1.cfg
 
 LIBDIR  = lib
@@ -23,7 +30,7 @@ LIBS    = $(OBJDIR)/tui.o \
           $(OBJDIR)/math.o
 
 PORT    ?= /dev/ttyUSB0
-BAUD    ?= 9600
+BAUD    ?= 4800
 
 .PHONY: all libs clean upload dirs examples
 

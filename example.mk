@@ -3,12 +3,22 @@
 # Include this from each example's Makefile:
 #   TARGET = myprog
 #   include ../../example.mk
+#
+# Remember to set CC65_HOME in your .bashrc file.
+#   example:  export CC65_HOME="~/sym1/cc65"
 # =============================================================================
 
-ROOT    ?= ../..
-AS      = ca65
-LD      = ld65
-ASFLAGS = -I $(ROOT)/include -t none
+#CC65_HOME ?= ~/sym1/cc65
+
+AS = $(CC65_HOME)/bin/ca65
+CC = $(CC65_HOME)/bin/cc65
+CL = $(CC65_HOME)/bin/cl65
+LD = $(CC65_HOME)/bin/ld65
+DA = $(CC65_HOME)/bin/da65
+
+ROOT ?= ../..
+
+ASFLAGS = -I $(ROOT)/include -t sym1
 LDFLAGS = -C $(ROOT)/sym1.cfg -m $(TARGET).map
 
 OBJDIR  = build
@@ -19,7 +29,7 @@ LIBS    = $(LIBDIR)/tui.o \
           $(LIBDIR)/math.o
 
 PORT    ?= /dev/ttyUSB0
-BAUD    ?= 9600
+BAUD    ?= 4800
 
 .PHONY: all clean upload libs
 
