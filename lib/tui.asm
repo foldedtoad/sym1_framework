@@ -6,6 +6,14 @@
 ; Requires  : sym1.inc, macros.inc, tui.inc
 ; =============================================================================
 
+; =============================================================================
+; There are two line-drawing implementations: VT100 ACS and UTF-8
+; Define VT100 for VT100 ACS
+; Not-define VT100 for UTF-8 
+; NOTE: Must be defined before including tui.inc
+; =============================================================================
+;VT100 = 0
+
         .include "sym1.inc"
         .include "macros.inc"
         .include "tui.inc"
@@ -17,9 +25,7 @@
         .export tui_set_attr, tui_attr_reset
         .export tui_box, tui_box_double, tui_hline, tui_vline
         .export tui_fill_rect, tui_title_bar, tui_status_bar
-        .export tui_getch, tui_getline
-
-OUTCHR   := $8A47     ; Output character
+        .export tui_getch, tui_getline     
 
 ; =============================================================================
 ; Internal helpers — emit raw byte to ACIA / Supermonitor
@@ -61,6 +67,22 @@ _puts_inline:
         lda  PTR_LO
         pha
         rts
+
+; =============================================================================
+;  Print a null-terminated character string
+; =============================================================================
+print_string:
+        stx SCRATCH0
+        sty SCRATCH1
+        ldy #$00
+@loop:
+        lda (SCRATCH0),y
+        beq @done
+        jsr OUTCHR
+        iny
+        bne @loop
+@done:
+        rts   
 
 ; =============================================================================
 ; tui_init — Initialise terminal
@@ -109,7 +131,7 @@ tui_exit:
         jsr  tui_gotoxy
         jsr  tui_newline
         POP_AXY
-        jmp  MONITR                 ; Return to Supermonitor
+        jmp  WARM  ; was MONITR          ; Return to Supermonitor
 
 ; =============================================================================
 ; tui_gotoxy — Move cursor to (TUI_COL, TUI_ROW)
@@ -253,6 +275,8 @@ tui_putch:
         sta  TUI_COL
 @done:  rts
 
+
+.ifdef VT100 ; Use VT100 ACS for line drawing
 ; =============================================================================
 ; tui_putch_acs  — print one VT100 ACS (alternate character set) character
 ;   A = ACS code (e.g. ACS_ULCORNER)
@@ -281,6 +305,59 @@ tui_putch_acs:
         jsr  _putc
         POP_AXY
         rts
+
+.else ; UTF-8 for line drawing
+
+; =============================================================================
+; tui_putch_acs — print one box-drawing character via UTF-8 lookup table
+;   A = ACS index constant (ACS_ULCORNER etc. defined in tui.inc as 0–12)
+;   Emits the 3-byte UTF-8 sequence for the corresponding Unicode box char.
+;   Does NOT use ESC(0/ESC(B — works with any UTF-8 terminal (minicom, etc.)
+; =============================================================================
+tui_putch_acs:
+        ; A = ACS index (0–12).  Multiply by 3 to get offset into table.
+        sta  SCRATCH0
+        PUSH_AXY
+        ; offset = index * 3  (each entry is 3 bytes)
+        lda  SCRATCH0
+        asl  a          ; *2
+        clc
+        adc  SCRATCH0   ; +1 = *3
+        tax             ; X = byte offset into _acs_utf8_tab
+        ; Emit 3 bytes
+        lda  _acs_utf8_tab,x
+        jsr  _putc
+        lda  _acs_utf8_tab+1,x
+        jsr  _putc
+        lda  _acs_utf8_tab+2,x
+        jsr  _putc
+        inc  TUI_COL
+        POP_AXY
+        rts
+
+; UTF-8 encodings for box-drawing characters, indexed by ACS_* constants.
+; Each entry is exactly 3 bytes (all box-drawing chars are U+2500–U+257F,
+; encoding as E2 94 xx or E2 95 xx in UTF-8).
+;
+; Index order must match ACS_* values in tui.inc:
+;   0=ULCORNER  1=URCORNER  2=LLCORNER  3=LRCORNER
+;   4=HLINE     5=VLINE     6=LTEE      7=RTEE
+;   8=BTEE      9=TTEE     10=PLUS     11=DIAMOND  12=CKBOARD
+_acs_utf8_tab:
+        .byte $E2,$94,$8C   ;  0 ACS_ULCORNER  ┌ U+250C
+        .byte $E2,$94,$90   ;  1 ACS_URCORNER  ┐ U+2510
+        .byte $E2,$94,$94   ;  2 ACS_LLCORNER  └ U+2514
+        .byte $E2,$94,$98   ;  3 ACS_LRCORNER  ┘ U+2518
+        .byte $E2,$94,$80   ;  4 ACS_HLINE     ─ U+2500
+        .byte $E2,$94,$82   ;  5 ACS_VLINE     │ U+2502
+        .byte $E2,$94,$9C   ;  6 ACS_LTEE      ├ U+251C
+        .byte $E2,$94,$A4   ;  7 ACS_RTEE      ┤ U+2524
+        .byte $E2,$94,$B4   ;  8 ACS_BTEE      ┴ U+2534
+        .byte $E2,$94,$AC   ;  9 ACS_TTEE      ┬ U+252C
+        .byte $E2,$94,$BC   ; 10 ACS_PLUS      ┼ U+253C
+        .byte $E2,$97,$86   ; 11 ACS_DIAMOND   ◆ U+25C6
+        .byte $E2,$96,$92   ; 12 ACS_CKBOARD   ▒ U+2592
+.endif
 
 ; =============================================================================
 ; tui_puts — print NUL-terminated string at PTR_LO:PTR_HI
@@ -443,6 +520,8 @@ tui_attr_reset:
         POP_AXY
         rts
 
+
+.ifdef VT100 ; Use VT100 ACS for line drawing
 ; =============================================================================
 ; tui_hline — draw horizontal line
 ;   TUI_COL, TUI_ROW = start position; SCRATCH0 = length
@@ -470,7 +549,26 @@ tui_hline:
         lda  #'B'
         jsr  _putc
         POP_AXY
+         rts
+
+.else ; UTF-8 for line drawings
+; =============================================================================
+; tui_hline — draw horizontal line
+;   TUI_COL, TUI_ROW = start position; SCRATCH0 = length
+; =============================================================================
+tui_hline:
+        PUSH_AXY
+        jsr  tui_gotoxy
+        lda  SCRATCH0
+        tax                     ; X = remaining count
+@loop:
+        lda  #ACS_HLINE
+        jsr  tui_putch_acs      ; emits 3-byte UTF-8 sequence
+        dex
+        bne  @loop
+        POP_AXY
         rts
+.endif
 
 ; =============================================================================
 ; tui_vline — draw vertical line
@@ -711,7 +809,7 @@ tui_status_bar:
 ;     ESC [ 1 9 ~    → KEY_F8
 ; =============================================================================
 tui_getch:
-        jsr  MONIN              ; blocks until char available
+        jsr  INTCHR  ; was MONIN              ; blocks until char available
         cmp  #$1B
         beq  @esc
         rts                     ; return plain char
@@ -733,7 +831,7 @@ tui_getch:
         rts
 
 @got_seq:
-        jsr  MONIN              ; get '[' or 'O'
+        jsr  INTCHR  ; was MONIN              ; get '[' or 'O'
         cmp  #'['
         beq  @csi
         cmp  #'O'
@@ -742,7 +840,7 @@ tui_getch:
         rts
 
 @ss3:   ; SS3 sequences: ESC O P/Q/R/S → F1–F4
-        jsr  MONIN
+        jsr  INTCHR  ; was MONIN
         cmp  #'P'
         bne  @ss3_q
         lda  #KEY_F1
@@ -759,7 +857,7 @@ tui_getch:
         rts
 
 @csi:   ; CSI sequences: ESC [ ...
-        jsr  MONIN
+        jsr  INTCHR  ; was MONIN
         cmp  #'A'
         bne  @csi_b
         lda  #KEY_UP
@@ -787,12 +885,12 @@ tui_getch:
 @csi_num:
         ; Numeric parameter sequences: digit ~ or digit digit ~
         sta  SCRATCH0           ; save first digit
-        jsr  MONIN              ; get second byte
+        jsr  INTCHR  ; was MONIN  ; get second byte
         cmp  #'~'
         beq  @one_param
         ; Two-digit param
         sta  SCRATCH1
-        jsr  MONIN              ; consume '~'
+        jsr  INTCHR  ; was MONIN              ; consume '~'
         lda  SCRATCH0
         cmp  #'1'
         bne  @p2_other

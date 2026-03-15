@@ -65,7 +65,7 @@
 ; -----------------------------------------------------------------------------
 .macro  PRINT_CHAR  c
         lda  #c
-        jsr  MONOUT
+        jsr  OUTCHR;  ; was MONOUT  // robin
 .endmacro
 
 ; -----------------------------------------------------------------------------
@@ -75,7 +75,7 @@
 .macro  PRINT_STR  label
         ldx  #<(label)
         ldy  #>(label)
-        jsr  MONPRT
+        jsr  print_string ; was MONPRT  // robin
 .endmacro
 
 ; -----------------------------------------------------------------------------

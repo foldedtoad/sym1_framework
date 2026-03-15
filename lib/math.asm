@@ -93,7 +93,7 @@ math_div8:
         lda  SCRATCH1           ; quotient in A
         rts
 @divzero:
-        jmp  MONITR             ; trap to monitor
+        jmp  WARM ; was MONITR             ; trap to monitor
 
 ; =============================================================================
 ; math_mul16 — unsigned 16×8 → 16-bit multiply (truncated)
