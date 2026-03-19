@@ -12,7 +12,7 @@
 ; Not-define VT100 for UTF-8 
 ; NOTE: Must be defined before including tui.inc
 ; =============================================================================
-;VT100 = 0
+;VT100 = 1
 
         .include "sym1.inc"
         .include "macros.inc"
@@ -131,7 +131,7 @@ tui_exit:
         jsr  tui_gotoxy
         jsr  tui_newline
         POP_AXY
-        jmp  WARM  ; was MONITR          ; Return to Supermonitor
+        jmp  RESET  ; was MONITR          ; Return to Supermonitor
 
 ; =============================================================================
 ; tui_gotoxy — Move cursor to (TUI_COL, TUI_ROW)
@@ -595,17 +595,27 @@ tui_vline:
 tui_box:
         PUSH_AXY
 
-        ; -- Top edge
         lda  SCRATCH0
-        sta  TUI_COL
+        sta  X_VALUE
         lda  SCRATCH1
+        sta  Y_VALUE
+        lda  SCRATCH2
+        sta  W_VALUE
+        lda  SCRATCH3
+        sta  H_VALUE
+
+        ; -- Top edge
+        lda  X_VALUE
+        sta  TUI_COL
+        lda  Y_VALUE
         sta  TUI_ROW
         jsr  tui_gotoxy
 
         lda  #ACS_ULCORNER
         jsr  tui_putch_acs
+
         ; Top horizontal line (width - 2)
-        lda  SCRATCH2
+        lda  W_VALUE
         sec
         sbc  #2
         tax
@@ -613,59 +623,64 @@ tui_box:
         jsr  tui_putch_acs
         dex
         bne  @top
+
         lda  #ACS_URCORNER
         jsr  tui_putch_acs
 
         ; -- Side verticals
-        lda  SCRATCH3
+        lda  H_VALUE
         sec
         sbc  #2                 ; inner height
         tax
-        lda  SCRATCH1
+        lda  Y_VALUE
         clc
         adc  #1                 ; first inner row
-        sta  SCRATCH1           ; reuse SCRATCH1 as current row counter
+        sta  ROW_COUNT
 
-@sides: lda  SCRATCH0
+@sides: lda  X_VALUE
         sta  TUI_COL
-        lda  SCRATCH1
+        lda  ROW_COUNT
         sta  TUI_ROW
         jsr  tui_gotoxy
         lda  #ACS_VLINE
         jsr  tui_putch_acs
+
         ; Right side: col = x + w - 1
-        lda  SCRATCH0
+        lda  X_VALUE
         clc
-        adc  SCRATCH2
+        adc  W_VALUE
         sec
         sbc  #1
         sta  TUI_COL
         jsr  tui_gotoxy
         lda  #ACS_VLINE
         jsr  tui_putch_acs
-        inc  SCRATCH1
+        inc  ROW_COUNT
         dex
         bne  @sides
 
         ; -- Bottom edge
-        lda  SCRATCH0
+        lda  X_VALUE
         sta  TUI_COL
-        lda  SCRATCH1
+        lda  Y_VALUE   ; row = y + h -1
+        adc  H_VALUE
+        sec
+        sbc  #1
         sta  TUI_ROW
         jsr  tui_gotoxy
         lda  #ACS_LLCORNER
         jsr  tui_putch_acs
-        lda  SCRATCH2
+        lda  W_VALUE
         sec
         sbc  #2
         tax
+      
 @bot:   lda  #ACS_HLINE
         jsr  tui_putch_acs
         dex
         bne  @bot
         lda  #ACS_LRCORNER
         jsr  tui_putch_acs
-
         POP_AXY
         rts
 
