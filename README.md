@@ -41,11 +41,8 @@ sym1-framework/
 │   ├── hello/
 │   │   ├── hello.asm       # Hello World
 │   │   └── Makefile
-│   ├── tui_demo/
-│   │   ├── tui_demo.asm    # Full TUI demonstration
-│   │   └── Makefile
-│   └── sysinfo/
-│       ├── sysinfo.asm     # System information display
+│   └── tui_demo/
+│       ├── tui_demo.asm    # Full TUI demonstration
 │       └── Makefile
 └── docs/
     ├── sym1_memory_map.md  # Memory map reference
