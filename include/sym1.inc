@@ -10,6 +10,10 @@ WARM     = $8003     ; Monitor entry
 INTCHR   = $8A58     ; Input character without case conversion 
 RESET    = $8B4A     ; Hard reset
 
+MONIN   = INTCHR
+MONOUT  = OUTCHR
+MONITR  = RESET
+
 .IF 0
 ; -----------------------------------------------------------------------------
 ; Supermonitor V1.1 Jump Table  (ROM at $8000)

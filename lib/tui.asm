@@ -34,7 +34,7 @@
 ; _putc: output A to serial console (via Supermonitor MONOUT)
 ; Clobbers nothing (MONOUT may use A internally on SYM-1 V1.1)
 _putc:
-        jsr  OUTCHR ; was MONOUT  // robin
+        jsr  MONOUT
         rts
 
 ; _puts_inline: output a NUL-terminated string that immediately follows
@@ -131,7 +131,7 @@ tui_exit:
         jsr  tui_gotoxy
         jsr  tui_newline
         POP_AXY
-        jmp  RESET  ; was MONITR          ; Return to Supermonitor
+        jmp  MONITR          ; Return to Supermonitor
 
 ; =============================================================================
 ; tui_gotoxy — Move cursor to (TUI_COL, TUI_ROW)
@@ -824,7 +824,7 @@ tui_status_bar:
 ;     ESC [ 1 9 ~    → KEY_F8
 ; =============================================================================
 tui_getch:
-        jsr  INTCHR  ; was MONIN              ; blocks until char available
+        jsr  MONIN              ; blocks until char available
         cmp  #$1B
         beq  @esc
         rts                     ; return plain char
@@ -846,7 +846,7 @@ tui_getch:
         rts
 
 @got_seq:
-        jsr  INTCHR  ; was MONIN              ; get '[' or 'O'
+        jsr  MONIN              ; get '[' or 'O'
         cmp  #'['
         beq  @csi
         cmp  #'O'
@@ -855,7 +855,7 @@ tui_getch:
         rts
 
 @ss3:   ; SS3 sequences: ESC O P/Q/R/S → F1–F4
-        jsr  INTCHR  ; was MONIN
+        jsr  MONIN
         cmp  #'P'
         bne  @ss3_q
         lda  #KEY_F1
@@ -872,7 +872,7 @@ tui_getch:
         rts
 
 @csi:   ; CSI sequences: ESC [ ...
-        jsr  INTCHR  ; was MONIN
+        jsr  MONIN
         cmp  #'A'
         bne  @csi_b
         lda  #KEY_UP
@@ -900,12 +900,12 @@ tui_getch:
 @csi_num:
         ; Numeric parameter sequences: digit ~ or digit digit ~
         sta  SCRATCH0           ; save first digit
-        jsr  INTCHR  ; was MONIN  ; get second byte
+        jsr  MONIN              ; get second byte
         cmp  #'~'
         beq  @one_param
         ; Two-digit param
         sta  SCRATCH1
-        jsr  INTCHR  ; was MONIN              ; consume '~'
+        jsr  MONIN              ; consume '~'
         lda  SCRATCH0
         cmp  #'1'
         bne  @p2_other
