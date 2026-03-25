@@ -30,10 +30,11 @@ LIBS    = $(LIBDIR)/tui.o \
 
 PORT    ?= /dev/ttyUSB0
 BAUD    ?= 4800
+LOAD    ?= 0500
 
-.PHONY: all clean upload libs
+.PHONY: all clean libs upload 
 
-all: libs $(TARGET).hex flatten
+all: libs $(TARGET).bin flatten
 
 libs:
 	$(MAKE) -C $(ROOT) libs
@@ -46,20 +47,21 @@ $(OBJDIR)/$(TARGET).o: $(TARGET).asm | $(OBJDIR)
 
 $(TARGET).bin: $(OBJDIR)/$(TARGET).o $(LIBS)
 	$(LD) $(LDFLAGS) -o $@ $^
-
-$(TARGET).hex: $(TARGET).bin
-	python3 $(ROOT)/tools/bin2srec.py --load $$(python3 -c \
-	  "import subprocess,re; \
-	   out=subprocess.check_output(['grep','STARTADDRESS','$(ROOT)/sym1.cfg']).decode(); \
-	   print(int(re.search(r'default\\s*=\\s*(\\$$[0-9A-Fa-f]+)',out).group(1).lstrip('$$'),16) if re.search(r'default\\s*=\\s*(\\$$[0-9A-Fa-f]+)',out) else 0x0500)") \
-	  $< > $@
 	@echo "Built: $@ (`wc -c < $<` bytes)"
 
 clean:
 	rm -rf $(OBJDIR) $(TARGET).bin $(TARGET).hex $(TARGET).map $(TARGET).out
 
-upload: $(TARGET).hex
-	python3 $(ROOT)/tools/sym1upload.py --port $(PORT) --baud $(BAUD) $<
+# Upload via Supermonitor V1.1 M command (raw binary, no S-records)
+# Usage:  make upload PORT=/dev/ttyUSB0 LOAD=0500
+upload: $(TARGET).bin
+	python3 $(ROOT)/tools/sym1upload.py \
+	  --port $(PORT) --baud $(BAUD) --load $(LOAD) $<
+
+# Upload and immediately execute
+run: $(TARGET).bin
+	python3 $(ROOT)/tools/sym1upload.py \
+	  --port $(PORT) --baud $(BAUD) --load $(LOAD) --verbose --exec $<
 
 flatten:
 	hexdump -v -e '1/1 "%02x\n"' $(TARGET).bin > $(basename $(TARGET)).out
