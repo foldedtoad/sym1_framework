@@ -63,7 +63,7 @@
 
         ; --- Wait for any keypress, then exit ---
         jsr  tui_getch
-        jsr  tui_exit           ; Restore terminal, jump to MONITR
+        jsr  tui_exit           ; Restore terminal, jump to RESET
 
 ; -----------------------------------------------------------------------------
 ; String data

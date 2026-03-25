@@ -27,6 +27,16 @@ TUI_WHITE   = 7
 ; Build an attribute byte:  FG | (BG << 4)
 .define TUI_ATTR_BYTE(fg, bg)  ((bg << 4) | fg)
 
+.if 1
+; Custom color attributes
+TUI_NORMAL      = TUI_ATTR_BYTE(TUI_WHITE,   TUI_BLACK)
+TUI_REVERSE     = TUI_ATTR_BYTE(TUI_BLACK,   TUI_WHITE)
+TUI_HIGHLIGHT   = TUI_ATTR_BYTE(TUI_RED,     TUI_WHITE)
+TUI_TITLE_ATTR  = TUI_ATTR_BYTE(TUI_BLACK,   TUI_CYAN)
+TUI_STATUS_ATTR = TUI_ATTR_BYTE(TUI_BLACK,   TUI_GREEN)
+TUI_ERROR_ATTR  = TUI_ATTR_BYTE(TUI_WHITE,   TUI_RED)
+TUI_BORDER_ATTR = TUI_ATTR_BYTE(TUI_BLACK,   TUI_WHITE)
+.else
 ; Common pre-built attributes
 TUI_NORMAL      = TUI_ATTR_BYTE(TUI_WHITE,   TUI_BLACK)
 TUI_REVERSE     = TUI_ATTR_BYTE(TUI_BLACK,   TUI_WHITE)
@@ -35,7 +45,10 @@ TUI_TITLE_ATTR  = TUI_ATTR_BYTE(TUI_BLACK,   TUI_CYAN)
 TUI_STATUS_ATTR = TUI_ATTR_BYTE(TUI_BLACK,   TUI_GREEN)
 TUI_ERROR_ATTR  = TUI_ATTR_BYTE(TUI_WHITE,   TUI_RED)
 TUI_BORDER_ATTR = TUI_ATTR_BYTE(TUI_CYAN,    TUI_BLACK)
+.endif
 
+
+.ifdef VT100 ; Use VT100 ACS for line drawing
 ; -----------------------------------------------------------------------------
 ; Box-drawing characters (use VT100 alternate character set via ACS)
 ; These are the ACS code values to pass to tui_putch_acs
@@ -53,6 +66,28 @@ ACS_TTEE        = 'w'   ; ┬
 ACS_PLUS        = 'n'   ; ┼
 ACS_DIAMOND     = '`'   ; ◆
 ACS_CKBOARD     = 'a'   ; ▒
+
+.else ; UTF-8 for line drawing
+; -----------------------------------------------------------------------------
+; Box-drawing character indices for tui_putch_acs
+; These are table indices (0–12) into the UTF-8 lookup table in tui.asm.
+; tui_putch_acs emits the correct 3-byte UTF-8 sequence for each.
+; -----------------------------------------------------------------------------
+ACS_ULCORNER    = 0     ; ┌
+ACS_URCORNER    = 1     ; ┐
+ACS_LLCORNER    = 2     ; └
+ACS_LRCORNER    = 3     ; ┘
+ACS_HLINE       = 4     ; ─
+ACS_VLINE       = 5     ; │
+ACS_LTEE        = 6     ; ├
+ACS_RTEE        = 7     ; ┤
+ACS_BTEE        = 8     ; ┴
+ACS_TTEE        = 9     ; ┬
+ACS_PLUS        = 10    ; ┼
+ACS_DIAMOND     = 11    ; ◆
+ACS_CKBOARD     = 12    ; ▒
+
+.endif
 
 ; -----------------------------------------------------------------------------
 ; Screen dimensions

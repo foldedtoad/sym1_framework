@@ -5,6 +5,16 @@
 ; Assembler: ca65 (cc65 toolchain)
 ; =============================================================================
 
+OUTCHR   = $8A47     ; Output character
+WARM     = $8003     ; Monitor entry
+INTCHR   = $8A58     ; Input character without case conversion 
+RESET    = $8B4A     ; Hard reset
+
+MONIN   = INTCHR
+MONOUT  = OUTCHR
+MONITR  = RESET
+
+.IF 0
 ; -----------------------------------------------------------------------------
 ; Supermonitor V1.1 Jump Table  (ROM at $8000)
 ; -----------------------------------------------------------------------------
@@ -19,6 +29,7 @@ MONCRLF = $8018         ; alias
 
 ; Input status — poll before calling MONIN if you want non-blocking
 ; Read ACIA status register directly (see ACIA equates below)
+.ENDIF
 
 ; -----------------------------------------------------------------------------
 ; SYM-1 Memory Map
@@ -103,5 +114,11 @@ MATH_R_HI   = $F1
 ; String helpers
 STR_LEN     = $F2       ; Length result from str_len
 STR_TMP     = $F3
+
+ROW_COUNT   = $F4
+X_VALUE     = $F5
+Y_VALUE     = $F6
+W_VALUE     = $F7
+H_VALUE     = $F8
 
 ; Reserved $F4–$FF for future use / user extension
