@@ -16,10 +16,10 @@ CL = $(CC65_HOME)/bin/cl65
 LD = $(CC65_HOME)/bin/ld65
 DA = $(CC65_HOME)/bin/da65
 
-ROOT ?= ../..
+ROOT  ?= ../..
 
 ASFLAGS = -I $(ROOT)/include -t sym1
-LDFLAGS = -C $(ROOT)/sym1.cfg -m $(TARGET).map
+LDFLAGS = -C $(ROOT)/$(CFG) -m $(TARGET).map
 
 OBJDIR  = build
 LIBDIR  = $(ROOT)/build
