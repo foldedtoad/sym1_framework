@@ -1,243 +1,353 @@
 #!/usr/bin/env python3
 """
-sym1upload.py  —  Upload a binary or S-record file to the SYM-1 via serial.
+sym1upload.py  —  Upload binary to SYM-1 Supermonitor V1.1.
 
-The SYM-1 Supermonitor V1.1 accepts Motorola S-record (SREC) format through
-its 'L' (Load) command.  This script:
-  1. Opens the serial port
-  2. Sends a CR to wake the monitor
-  3. Issues the 'L' command
-  4. Streams S19 records line by line (with pacing to avoid overrun)
-  5. Optionally sends 'G <addr>' to execute the loaded program
+SUPERMONITOR V1.1 COMMAND PROTOCOL (confirmed by error analysis):
+
+  The M command takes NO address argument.  Sending 'M 0500' produces
+  error ER 13 (extra characters after command).
+
+  Correct sequence:
+    1. Send the address as a bare 4-digit hex number + CR
+       This sets the monitor's current address pointer.
+         e.g.  '0500\r'
+    2. The monitor responds with the address and current byte value:
+         '0500- XX'  (where XX is the current contents)
+    3. Send 'M\r' to enter memory modify mode at the current address.
+    4. Monitor shows the address and waits for a hex byte value.
+    5. For each byte: send 2 hex digits + Space  e.g. 'A9 '
+       Monitor stores the byte, advances to next address, shows next value.
+    6. Send '.\r' to exit modify mode.
+    7. Optionally send 'G 0500\r' to execute.
+
+  The CTRL-S (0x13) seen in previous responses was the monitor sending
+  XON/XOFF flow control to the host — it appears in the monitor's own
+  output between the echoed command and the error message. It is NOT
+  a corrupted byte from our transmission.
+
+  Port is set to raw termios mode to prevent the Linux kernel tty layer
+  from interfering with byte values in either direction.
 
 Usage:
-  python3 sym1upload.py [options] <file.hex | file.bin>
+  python3 sym1upload.py [options] <file.bin>
 
 Options:
-  --port    PORT    Serial port  (default: /dev/ttyUSB0)
-  --baud    BAUD    Baud rate    (default: 9600)
-  --exec            Auto-execute after load (sends G command)
-  --addr    ADDR    Execution start address in hex (default: 0500)
-  --delay   MS      Inter-record delay ms (default: 50)
-  --input   FILE    Input file (.hex = S-records, .bin = raw binary)
-  --load    ADDR    Load address for raw binary (hex, default: 0500)
-  --verbose         Show monitor responses
+  --port      PORT   Serial port          (default: /dev/ttyUSB0)
+  --baud      BAUD   Baud rate            (default: 4800)
+  --load      ADDR   Load address in hex  (default: 0500)
+  --exec             Execute after load
+  --exec-addr ADDR   Execution address    (default: same as --load)
+  --char-delay MS    Delay between characters in ms, matches minicom 'Character tx delay' (default: 5)
+  --newline-delay MS  Extra delay after CR in ms, matches minicom 'Newline tx delay' (default: 25)
+  --byte-delay MS    Delay after each byte in ms (default: 50)
+  --verbose          Show all serial I/O
+  --dry-run          Show what would be sent without opening port
 """
 
 import argparse
 import sys
 import time
-import struct
-import os
+import termios
 
 try:
     import serial
 except ImportError:
-    print("ERROR: pyserial not installed.  Run:  pip install pyserial")
+    print("ERROR: pyserial not installed.  Run:  pip3 install pyserial")
     sys.exit(1)
 
 
-# ---------------------------------------------------------------------------
-# S-record generation from raw binary
-# ---------------------------------------------------------------------------
+def set_raw(fd, baud):
+    """
+    Force the serial fd to completely raw mode via termios.
+    Clears all input/output processing, echo, signals, and flow control.
+    """
+    baud_map = {
+        1200:  termios.B1200,
+        2400:  termios.B2400,
+        4800:  termios.B4800,
+        9600:  termios.B9600,
+        19200: termios.B19200,
+    }
+    baud_const = baud_map.get(baud, termios.B4800)
 
-def checksum(data: bytes) -> int:
-    """Motorola S-record checksum: one's complement of sum of all bytes."""
-    return (~sum(data)) & 0xFF
-
-
-def make_s1_record(address: int, data: bytes) -> str:
-    """Create an S1 record (16-bit address) for up to 32 data bytes."""
-    # byte count = len(data) + 2 (addr bytes) + 1 (checksum)
-    byte_count = len(data) + 3
-    payload = bytes([byte_count, (address >> 8) & 0xFF, address & 0xFF]) + data
-    cs = checksum(payload)
-    return "S1" + payload.hex().upper() + f"{cs:02X}"
-
-
-def make_s9_record(start_address: int) -> str:
-    """Create an S9 record (end of file, with execution address)."""
-    byte_count = 3  # 2 addr + 1 checksum
-    payload = bytes([byte_count, (start_address >> 8) & 0xFF, start_address & 0xFF])
-    cs = checksum(payload)
-    return "S9" + payload.hex().upper() + f"{cs:02X}"
+    attrs = termios.tcgetattr(fd)
+    attrs[0] = 0                                              # iflag: no input processing
+    attrs[1] = 0                                              # oflag: no output processing
+    attrs[2] = baud_const | termios.CS8 | termios.CREAD | termios.CLOCAL
+    attrs[3] = 0                                              # lflag: raw, no echo
+    attrs[4] = baud_const                                     # ispeed
+    attrs[5] = baud_const                                     # ospeed
+    termios.tcsetattr(fd, termios.TCSANOW, attrs)
 
 
-def binary_to_srec(data: bytes, load_address: int, exec_address: int = None) -> list:
-    """Convert raw binary to list of S-record strings."""
-    records = ["S0030000FC"]   # S0 header record
-    CHUNK = 16                 # bytes per record (keep short for 6551 FIFO)
-    for offset in range(0, len(data), CHUNK):
-        chunk = data[offset:offset + CHUNK]
-        addr = load_address + offset
-        if addr > 0xFFFF:
-            print(f"ERROR: Address ${addr:04X} exceeds 16-bit range", file=sys.stderr)
-            sys.exit(1)
-        records.append(make_s1_record(addr, chunk))
-    records.append(make_s9_record(exec_address or load_address))
-    return records
-
-
-def load_file(path: str, load_address: int) -> list:
-    """Load a file and return list of S-record strings."""
-    ext = os.path.splitext(path)[1].lower()
-    if ext in ('.hex', '.s19', '.srec', '.mot'):
-        with open(path, 'r') as f:
-            return [line.strip() for line in f if line.strip()]
-    else:
-        # Treat as raw binary
-        with open(path, 'rb') as f:
-            data = f.read()
-        print(f"  Binary: {len(data)} bytes, loading at ${load_address:04X}")
-        return binary_to_srec(data, load_address)
-
-
-# ---------------------------------------------------------------------------
-# SYM-1 Supermonitor communication
-# ---------------------------------------------------------------------------
-
-def sym1_readline(port: serial.Serial, timeout: float = 2.0) -> str:
-    """Read a line from the monitor (CR or LF terminated)."""
+def drain(port, timeout=0.3, verbose=False):
+    """Read and return all pending bytes within timeout."""
     buf = b''
+    port.timeout = 0.05
     deadline = time.time() + timeout
     while time.time() < deadline:
-        b = port.read(1)
-        if b:
-            buf += b
-            if b in (b'\r', b'\n'):
-                break
-    return buf.decode('ascii', errors='replace').strip()
+        chunk = port.read(64)
+        if chunk:
+            buf += chunk
+            deadline = time.time() + timeout
+    port.timeout = 1.0
+    if verbose and buf:
+        display = buf.replace(b'\r', b'<CR>').replace(b'\n', b'<LF>')
+        display = display.replace(b'\x13', b'<XOFF>').replace(b'\x11', b'<XON>')
+        print(f"    rx: {display}")
+    return buf
 
 
-def sym1_send(port: serial.Serial, text: str, verbose: bool = False):
-    """Send a string to the monitor."""
+def send(port, data, char_delay_s=0.0, newline_delay_s=0.0, verbose=False):
+    """
+    Send bytes one character at a time with per-character and per-CR delays.
+    Matches minicom's 'Character tx delay' and 'Newline tx delay' settings
+    (minicom CTRL-A T).  Every byte gets char_delay_s; CR bytes additionally
+    get newline_delay_s on top (total CR delay = char_delay_s + newline_delay_s).
+    """
+    if isinstance(data, str):
+        data = data.encode('ascii')
     if verbose:
-        print(f"  TX: {text!r}")
-    port.write((text + '\r').encode('ascii'))
-    port.flush()
+        display = data.replace(b'\r', b'<CR>').replace(b'\n', b'<LF>')
+        print(f"    tx: {display}")
+    for byte in data:
+        port.write(bytes([byte]))
+        port.flush()
+        if byte == 0x0D and newline_delay_s > 0:
+            time.sleep(newline_delay_s)   # extra pause after CR
+        elif char_delay_s > 0:
+            time.sleep(char_delay_s)
 
 
-def sym1_wake(port: serial.Serial, verbose: bool):
-    """Send a CR and wait for monitor prompt."""
-    port.write(b'\r')
+def upload(port, data, load_addr, delay_s, char_delay_s=0.0, newline_delay_s=0.0, verbose=False):
+    """
+    Upload binary data using the correct V1.1 protocol:
+      1. Send bare address to set address pointer
+      2. Send 'M' to enter modify mode
+      3. Stream ASCII hex pairs
+      4. Send '.' to exit
+    """
+    total = len(data)
+    print(f"  Uploading {total} bytes to ${load_addr:04X}–${load_addr+total-1:04X}")
+    print()
+
+    # Step 1: Enter memory modify mode with bare 'm'
+    print(f"  Step 1: Enter modify mode  → 'm'")
+    send(port, "m", char_delay_s=char_delay_s, newline_delay_s=newline_delay_s, verbose=verbose)
+    time.sleep(0.3)
+    response = drain(port, timeout=0.4, verbose=verbose)
+
+    # Step 2: Set address pointer by sending bare 4-digit hex address + CR
+    addr_cmd = f"{load_addr:04X}\r"
+    print(f"  Step 2: Set address pointer → '{addr_cmd.strip()}'")
+    send(port, addr_cmd, char_delay_s=char_delay_s, newline_delay_s=newline_delay_s, verbose=verbose)
+    time.sleep(0.3)
+    response = drain(port, timeout=0.4, verbose=verbose)
+    if verbose:
+        print(f"    (address set response: {response!r})")
+
+    if b'ER' in response:
+        print(f"  ERROR: Monitor rejected M command: {response!r}")
+        print()
+        print("  The monitor must be at the '.' prompt before uploading.")
+        print("  Try pressing CR on the SYM-1 keyboard to get the prompt,")
+        print("  then run the upload again.")
+        return False
+
+    if verbose:
+        print(f"    (modify mode response: {response!r})")
+    print(f"  Modify mode entered. Streaming {total} bytes as ASCII hex...")
+    print()
+
+    print(f"delay_s: {delay_s}")
+    
+    # Step 3: Stream bytes as ASCII hex pairs with trailing space
+    errors = 0
+    for i, val in enumerate(data):
+        hex_pair = f"{val:02X} "
+        send(port, hex_pair, char_delay_s=char_delay_s, newline_delay_s=newline_delay_s, verbose=verbose)
+        time.sleep(delay_s)
+
+        r = drain(port, timeout=0.02, verbose=False)
+        if verbose and r:
+            display = r.replace(b'\r',b'<CR>').replace(b'\n',b'<LF>')
+            display = display.replace(b'\x13',b'<XOFF>').replace(b'\x11',b'<XON>')
+            print(f"    rx: {display}")
+        if b'ER' in r:
+            errors += 1
+            print(f"\n  ERROR at byte {i+1} (${load_addr+i:04X} = {val:02X}): {r!r}")
+
+        if not verbose:
+            if (i + 1) % 64 == 0 or i == total - 1:
+                pct = (i + 1) * 100 // total
+                bar  = '#' * (pct // 5) + '.' * (20 - pct // 5)
+                rem  = (total - i - 1) * delay_s
+                print(f"\r  [{bar}] {pct:3d}%  {i+1}/{total}  ~{rem:.0f}s remaining  ",
+                      end='', flush=True)
+
+    print()
+
+    # Step 4: Exit modify mode
+    print("  Exiting modify mode...")
+    send(port, ".\r", char_delay_s=char_delay_s, newline_delay_s=newline_delay_s, verbose=verbose)
     time.sleep(0.2)
-    resp = port.read(port.in_waiting).decode('ascii', errors='replace')
-    if verbose:
-        print(f"  Wake response: {resp!r}")
+    drain(port, timeout=0.3, verbose=verbose)
 
+    if errors:
+        print(f"  WARNING: {errors} error(s) during upload.")
+        print(f"  Consider increasing --byte-delay and retrying.")
+    else:
+        print("  Upload complete — no errors.")
 
-def upload(args):
-    print(f"SYM-1 Uploader")
-    print(f"  Port  : {args.port}")
-    print(f"  Baud  : {args.baud}")
-    print(f"  File  : {args.input}")
+    return errors == 0
 
-    records = load_file(args.input, int(args.load, 16))
-    # Count only data records (S1/S2/S3)
-    data_records = [r for r in records if r.startswith(('S1', 'S2', 'S3'))]
-    print(f"  Records: {len(data_records)} data  +  overhead")
-
-    with serial.Serial(
-        args.port,
-        baudrate=args.baud,
-        bytesize=8,
-        parity='N',
-        stopbits=1,
-        timeout=2
-    ) as port:
-        print("\nConnecting to SYM-1...")
-        sym1_wake(port, args.verbose)
-
-        # Enter load mode
-        sym1_send(port, 'L', args.verbose)
-        time.sleep(0.1)
-        if args.verbose:
-            print(f"  Monitor response: {port.read(port.in_waiting)!r}")
-
-        print(f"Uploading {len(records)} records...")
-        for i, rec in enumerate(records):
-            port.write((rec + '\r').encode('ascii'))
-            port.flush()
-            # Pacing: wait for inter-record delay
-            time.sleep(args.delay / 1000.0)
-            # Echo checking (optional)
-            if args.verbose and port.in_waiting:
-                echo = port.read(port.in_waiting).decode('ascii', errors='replace')
-                print(f"  [{i+1:4d}/{len(records)}] {rec[:20]}…  echo: {echo!r}")
-            elif (i + 1) % 16 == 0:
-                pct = (i + 1) * 100 // len(records)
-                bar = '#' * (pct // 5) + '.' * (20 - pct // 5)
-                print(f"\r  [{bar}] {pct:3d}%  record {i+1}/{len(records)}", end='', flush=True)
-
-        print(f"\r  [{'#'*20}] 100%  {len(records)} records sent          ")
-
-        # Brief pause for monitor to process S9
-        time.sleep(0.3)
-        resp = port.read(port.in_waiting).decode('ascii', errors='replace')
-        if args.verbose:
-            print(f"  Final response: {resp!r}")
-
-        # Optionally execute
-        if args.exec:
-            exec_addr = args.addr.upper()
-            print(f"\nExecuting at ${exec_addr}...")
-            sym1_send(port, f'G {exec_addr}', args.verbose)
-
-    print("Done.")
-
-
-# ---------------------------------------------------------------------------
-# bin2srec convenience (also usable as standalone)
-# ---------------------------------------------------------------------------
-
-def bin2srec_main():
-    """Called when invoked as bin2srec.py"""
-    import argparse as ap
-    p = ap.ArgumentParser(description='Convert binary to Motorola S-records')
-    p.add_argument('input', help='Input binary file')
-    p.add_argument('--load', default='0500', help='Load address (hex)')
-    args = p.parse_args()
-    records = binary_to_srec(
-        open(args.input, 'rb').read(),
-        int(args.load, 16)
-    )
-    for r in records:
-        print(r)
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Upload S-records or binary to SYM-1 via Supermonitor'
+        description='Upload binary to SYM-1 Supermonitor V1.1'
     )
-    parser.add_argument('input', help='Input file (.hex/.s19/.bin)')
-    parser.add_argument('--port',    default='/dev/ttyUSB0', help='Serial port')
-    parser.add_argument('--baud',    type=int, default=4800,  help='Baud rate')
-    parser.add_argument('--exec',    action='store_true',     help='Execute after load')
-    parser.add_argument('--addr',    default='0500',          help='Execution address (hex)')
-    parser.add_argument('--load',    default='0500',          help='Binary load address (hex)')
-    parser.add_argument('--delay',   type=int, default=50,    help='Inter-record delay (ms)')
-    parser.add_argument('--verbose', action='store_true',     help='Verbose output')
+    parser.add_argument('input',
+        help='Input binary file (.bin)')
+    parser.add_argument('--port', default='/dev/ttyUSB0',
+        help='Serial port (default: /dev/ttyUSB0)')
+    parser.add_argument('--baud', type=int, default=4800,
+        help='Baud rate (default: 4800)')
+    parser.add_argument('--load', default='0500',
+        help='Load address in hex (default: 0500)')
+    parser.add_argument('--exec', dest='execute', action='store_true',
+        help='Execute after upload')
+    parser.add_argument('--exec-addr', default=None,
+        help='Execution address in hex (default: same as --load)')
+    parser.add_argument('--char-delay', type=int, default=5,
+        help='Delay between characters in ms — minicom Character tx delay (default: 5)')
+    parser.add_argument('--newline-delay', type=int, default=25,
+        help='Extra delay after CR in ms — minicom Newline tx delay (default: 25)')
+    parser.add_argument('--byte-delay', type=int, default=50,
+        help='Delay after each byte in ms (default: 50)')
+    parser.add_argument('--verbose', action='store_true',
+        help='Show all serial I/O')
+    parser.add_argument('--dry-run', action='store_true',
+        help='Show what would be sent without opening port')
     args = parser.parse_args()
 
     try:
-        upload(args)
+        load_addr = int(args.load, 16)
+    except ValueError:
+        print(f"ERROR: Invalid load address: {args.load!r}")
+        sys.exit(1)
+
+    exec_addr = load_addr
+    if args.exec_addr:
+        try:
+            exec_addr = int(args.exec_addr, 16)
+        except ValueError:
+            print(f"ERROR: Invalid exec address: {args.exec_addr!r}")
+            sys.exit(1)
+
+    try:
+        with open(args.input, 'rb') as f:
+            data = f.read()
+    except FileNotFoundError:
+        print(f"ERROR: File not found: {args.input!r}")
+        sys.exit(1)
+
+    delay_s         = args.byte_delay / 1000.0
+    char_delay_s    = args.char_delay / 1000.0
+    newline_delay_s = args.newline_delay / 1000.0
+
+    est_time = len(data) * delay_s
+
+    print(f"SYM-1 Supermonitor V1.1 Uploader")
+    print(f"  File      : {args.input}  ({len(data)} bytes)")
+    print(f"  Load addr : ${load_addr:04X}")
+    if args.execute:
+        print(f"  Exec addr : ${exec_addr:04X}")
+    print(f"  Port      : {args.port}  @ {args.baud} baud")
+    print(f"  Char delay : {args.char_delay} ms")
+    print(f"  NL delay   : {args.newline_delay} ms")
+    print(f"  Byte delay : {args.byte_delay} ms")
+    print(f"  Est. time : {est_time:.0f}s  ({est_time/60:.1f} min)")
+    print()
+
+    if args.dry_run:
+        print("[dry run] Sequence that would be sent:")
+        print(f"  '{load_addr:04X}\\r'          ← set address pointer")
+        print(f"  'm\\r'                 ← enter modify mode")
+        preview = ''.join(f'{b:02X} ' for b in data[:12])
+        print(f"  '{preview}...'  ← {len(data)} bytes as ASCII hex pairs")
+        print(f"  '.\\r'                 ← exit modify mode")
+        if args.execute:
+            print(f"  'g {exec_addr:04X}\\r'          ← execute")
+        return
+
+    try:
+        port = serial.Serial(
+            args.port,
+            baudrate=args.baud,
+            bytesize=8,
+            parity='N',
+            stopbits=1,
+            timeout=1.0,
+            xonxoff=False,
+            rtscts=False,
+            dsrdtr=False,
+        )
     except serial.SerialException as e:
-        print(f"\nSerial error: {e}", file=sys.stderr)
-        print("Check that the port exists and you have permission to access it.")
-        print("  Linux:  sudo usermod -aG dialout $USER  (then re-login)")
+        print(f"ERROR opening {args.port}: {e}")
+        print("  Check: ls /dev/ttyUSB*  and  sudo usermod -aG dialout $USER")
+        sys.exit(1)
+
+    try:
+        # Force raw mode — bypass all kernel tty processing
+        set_raw(port.fileno(), args.baud)
+        print("Port set to raw mode (kernel tty processing disabled).")
+        print()
+
+        # Wake monitor
+        print("Waking monitor...")
+        send(port, "\r", verbose=args.verbose)
+        time.sleep(0.3)
+        response = drain(port, timeout=0.5, verbose=args.verbose)
+        if b'.' not in response:
+            send(port, "\r", verbose=args.verbose)
+            time.sleep(0.4)
+            response = drain(port, timeout=0.5, verbose=args.verbose)
+
+        if b'.' in response:
+            print("  Monitor prompt received.")
+        else:
+            print(f"  WARNING: No '.' prompt (got: {response!r})")
+            print("  Ensure SYM-1 is at monitor prompt and try again.")
+        print()
+
+        ok = upload(port, data, load_addr, delay_s, char_delay_s=char_delay_s, newline_delay_s=newline_delay_s, verbose=args.verbose)
+
+        if args.execute and ok:
+            print()
+            print(f"Executing at 'g ${exec_addr:04X}'...")
+            send(port, f"g", verbose=args.verbose)
+            send(port, f"{exec_addr:04X}\r", verbose=args.verbose)
+            time.sleep(0.2)
+            drain(port, timeout=0.3, verbose=args.verbose)
+
+        print()
+        print("Done." if ok else "Completed with errors.")
+        sys.exit(0 if ok else 1)
+
+    except serial.SerialException as e:
+        print(f"\nSerial error: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\nAborted.")
-        sys.exit(0)
+        print("\nAborted — sending '.' to exit modify mode...")
+        try:
+            port.write(b'.\r')
+            port.flush()
+        except Exception:
+            pass
+        sys.exit(1)
+    finally:
+        port.close()
 
 
 if __name__ == '__main__':
-    # Allow use as bin2srec if invoked that way
-    if os.path.basename(sys.argv[0]) == 'bin2srec.py':
-        bin2srec_main()
-    else:
-        main()
+    main()

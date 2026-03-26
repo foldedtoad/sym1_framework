@@ -32,6 +32,8 @@ PORT    ?= /dev/ttyUSB0
 BAUD    ?= 4800
 LOAD    ?= 0500
 
+DELAYS  = --byte-delay=1 --char-delay=5 --newline-delay=25
+
 .PHONY: all clean libs upload 
 
 all: libs $(TARGET).bin flatten
@@ -56,12 +58,14 @@ clean:
 # Usage:  make upload PORT=/dev/ttyUSB0 LOAD=0500
 upload: $(TARGET).bin
 	python3 $(ROOT)/tools/sym1upload.py \
-	  --port $(PORT) --baud $(BAUD) --load $(LOAD) $<
+	  --port $(PORT) --baud $(BAUD) --load $(LOAD) $(DELAYS) $<
+	@echo python3 $(ROOT)/tools/sym1upload.py \
+	  --port $(PORT) --baud $(BAUD) --load $(LOAD) $(DELAYS) $<
 
 # Upload and immediately execute
 run: $(TARGET).bin
 	python3 $(ROOT)/tools/sym1upload.py \
-	  --port $(PORT) --baud $(BAUD) --load $(LOAD) --verbose --exec $<
+	  --port $(PORT) --baud $(BAUD) --load $(LOAD) $(DELAYS) --exec $<
 
 flatten:
 	hexdump -v -e '1/1 "%02x\n"' $(TARGET).bin > $(basename $(TARGET)).out
