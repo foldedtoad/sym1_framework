@@ -59,13 +59,10 @@ clean:
 upload: $(TARGET).bin
 	python3 $(ROOT)/tools/sym1upload.py \
 	  --port $(PORT) --baud $(BAUD) --load $(LOAD) $(DELAYS) $<
-	@echo python3 $(ROOT)/tools/sym1upload.py \
-	  --port $(PORT) --baud $(BAUD) --load $(LOAD) $(DELAYS) $<
 
-# Upload and immediately execute
+# Start a terminal session with the SYM-1
 run: $(TARGET).bin
-	python3 $(ROOT)/tools/sym1upload.py \
-	  --port $(PORT) --baud $(BAUD) --load $(LOAD) $(DELAYS) --exec $<
+	putty -serial $(PORT) -sercfg $(BAUD),8,n,1,N
 
 flatten:
 	hexdump -v -e '1/1 "%02x\n"' $(TARGET).bin > $(basename $(TARGET)).out

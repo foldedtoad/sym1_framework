@@ -83,7 +83,7 @@ def set_raw(fd, baud):
 def drain(port, timeout=0.3, verbose=False):
     """Read and return all pending bytes within timeout."""
     buf = b''
-    port.timeout = 0.05
+    port.timeout = 0.005                    # was 0.05
     deadline = time.time() + timeout
     while time.time() < deadline:
         chunk = port.read(64)
@@ -118,12 +118,11 @@ def send(port, data, char_delay_s=0.0, newline_delay_s=0.0, verbose=False):
         elif char_delay_s > 0:
             time.sleep(char_delay_s)
 
-
 def upload(port, data, load_addr, delay_s, char_delay_s=0.0, newline_delay_s=0.0, verbose=False):
     """
     Upload binary data using the correct V1.1 protocol:
       1. Send bare address to set address pointer
-      2. Send 'M' to enter modify mode
+      2. Send 'm' to enter modify mode
       3. Stream ASCII hex pairs
       4. Send '.' to exit
     """
@@ -159,8 +158,6 @@ def upload(port, data, load_addr, delay_s, char_delay_s=0.0, newline_delay_s=0.0
     print(f"  Modify mode entered. Streaming {total} bytes as ASCII hex...")
     print()
 
-    print(f"delay_s: {delay_s}")
-    
     # Step 3: Stream bytes as ASCII hex pairs with trailing space
     errors = 0
     for i, val in enumerate(data):
@@ -191,7 +188,7 @@ def upload(port, data, load_addr, delay_s, char_delay_s=0.0, newline_delay_s=0.0
     print("  Exiting modify mode...")
     send(port, ".\r", char_delay_s=char_delay_s, newline_delay_s=newline_delay_s, verbose=verbose)
     time.sleep(0.2)
-    drain(port, timeout=0.3, verbose=verbose)
+    drain(port, timeout=0.1, verbose=verbose)
 
     if errors:
         print(f"  WARNING: {errors} error(s) during upload.")

@@ -19,7 +19,7 @@ CL = $(CC65_HOME)/bin/cl65
 LD = $(CC65_HOME)/bin/ld65
 DA = $(CC65_HOME)/bin/da65
 
-ASFLAGS = -t none -I include 
+ASFLAGS = -t none -I include
 LDFLAGS = -C sym1.cfg
 
 LIBDIR  = lib
@@ -27,7 +27,9 @@ OBJDIR  = build
 
 LIBS    = $(OBJDIR)/tui.o \
           $(OBJDIR)/string.o \
-          $(OBJDIR)/math.o
+          $(OBJDIR)/math.o \
+          $(OBJDIR)/i2c.o \
+          $(OBJDIR)/irq.o
 
 PORT    ?= /dev/ttyUSB0
 BAUD    ?= 4800
@@ -50,17 +52,23 @@ $(OBJDIR)/string.o: $(LIBDIR)/string.asm include/sym1.inc include/macros.inc
 $(OBJDIR)/math.o: $(LIBDIR)/math.asm include/sym1.inc include/macros.inc
 	$(AS) $(ASFLAGS) -o $@ $<
 
+$(OBJDIR)/i2c.o: $(LIBDIR)/i2c.asm include/sym1.inc include/macros.inc
+	$(AS) $(ASFLAGS) -o $@ $<
+
+$(OBJDIR)/irq.o: $(LIBDIR)/irq.asm include/sym1.inc include/macros.inc
+	$(AS) $(ASFLAGS) -o $@ $<	
+
 # Build all examples
 examples:
 	$(MAKE) -C examples/hello
 	$(MAKE) -C examples/tui_demo
-	$(MAKE) -C examples/sysinfo
+	$(MAKE) -C examples/sensor
 
 clean:
 	rm -rf $(OBJDIR)
-	$(MAKE) -C examples/hello clean   2>/dev/null || true
+	$(MAKE) -C examples/hello    clean 2>/dev/null || true
 	$(MAKE) -C examples/tui_demo clean 2>/dev/null || true
-	$(MAKE) -C examples/sysinfo clean  2>/dev/null || true
+	$(MAKE) -C examples/sensor   clean 2>/dev/null || true
 
 # Upload a .hex file to the SYM-1
 # Usage: make upload TARGET=path/to/file.hex
